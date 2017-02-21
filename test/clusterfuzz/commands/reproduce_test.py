@@ -19,6 +19,7 @@ import json
 import os
 import multiprocessing
 import mock
+import multiprocessing
 
 from clusterfuzz import common
 from clusterfuzz.commands import reproduce

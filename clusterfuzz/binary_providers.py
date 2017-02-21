@@ -178,7 +178,8 @@ class GenericBuilder(BinaryProvider):
     if os.path.isfile(args_gn_location):
       os.remove(args_gn_location)
 
-    common.execute('gn gen %s' % self.build_directory, self.source_directory)
+    if not os.path.exists(os.path.dirname(args_gn_location)):
+      os.makedirs(os.path.dirname(args_gn_location))
 
     lines = []
     with open(os.path.join(self.build_dir_name(), 'args.gn'), 'r') as f:
@@ -193,6 +194,10 @@ class GenericBuilder(BinaryProvider):
       if other_options:
         for k, v in other_options.iteritems():
           f.write('%s = %s\n' % (k, v))
+
+    common.execute(
+        'gn gen %s' % self.build_directory, self.source_directory)
+
 
   def build_target(self):
     """Build the correct revision in the source directory.
@@ -238,16 +243,16 @@ class PdfiumBuilder(GenericBuilder):
   def setup_gn_args(self, other_options=None):
     other_options = {'pdf_is_standalone': 'true'}
     super(PdfiumBuilder, self).setup_gn_args(other_options)
-    common.execute('gn gen %s' % self.build_directory, self.source_directory)
 
   def build_target(self):
     """Build the correct revision in the source directory."""
 
+    common.execute('gclient sync', self.source_directory)
     self.setup_gn_args()
     goma_cores = 10 * multiprocessing.cpu_count()
     common.execute(
-        ('ninja -C %s -j %i %s' % (self.build_directory, goma_cores,
-                                   self.target)),
+        ("ninja -w 'dupbuild=err' -C %s -j %i -l %i %s" % (
+         self.build_directory, goma_cores, goma_cores, self.target)),
         self.source_directory)
 
 class V8Builder(GenericBuilder):
@@ -267,13 +272,14 @@ class V8Builder(GenericBuilder):
     print 'Building %s revision %i in %s' % (
         self.name, self.revision, self.build_directory)
 
-    self.setup_gn_args()
     goma_cores = 10 * multiprocessing.cpu_count()
     common.execute('GYP_DEFINES=asan=1 gclient runhooks', self.source_directory)
+    common.execute('gclient sync', self.source_directory)
     common.execute('GYP_DEFINES=asan=1 gypfiles/gyp_v8', self.source_directory)
+    self.setup_gn_args()
     common.execute(
-        ('ninja -C %s -j %i %s'
-         % (self.build_directory, goma_cores, self.target)),
+        ("ninja -w 'dupbuild=err' -C %s -j %i -l %i %s"
+         % (self.build_directory, goma_cores, goma_cores, self.target)),
         self.source_directory)
 
 class ChromiumBuilder(GenericBuilder):
@@ -300,12 +306,14 @@ class ChromiumBuilder(GenericBuilder):
     """Build the correct revision in the source directory."""
 
     common.execute('gclient runhooks', self.source_directory)
+    common.execute('gclient sync', self.source_directory)
     self.setup_gn_args()
     goma_cores = 10 * multiprocessing.cpu_count()
     common.execute(
-        ('ninja -C %s -j %i -l %i chromium_builder_asan' % (
+        ("ninja -w 'dupbuild=err' -C %s -j %i -l %i chromium_builder_asan" % (
             self.build_directory, goma_cores, goma_cores)),
         self.source_directory, capture_output=False)
 
   def get_binary_path(self):
     return '%s/%s' % (self.get_build_directory(), self.binary_name)
+
