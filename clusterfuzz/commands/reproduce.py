@@ -50,8 +50,11 @@ STANDALONE_SUPPORTED_JOBS = {
                                                'V8_SRC', 'd8')}
 
 CHROMIUM_SUPPORTED_JOBS = {
-    'linux_asan_pdfium': common.BinaryDefinition(binary_providers.PdfiumBuilder,
-                                                 'PDFIUM_SRC', 'pdfium_test')}
+    'linux_asan_pdfium': common.BinaryDefinition(
+        binary_providers.ChromiumBuilder, 'CHROMIUM_SRC', 'pdfium_test'),
+    'linux_cfi_chrome': common.BinaryDefinition(
+        binary_providers.ChromiumBuilder, 'CHROMIUM_SRC', 'chrome')
+}
 
 
 class SuppressOutput(object):
@@ -147,14 +150,18 @@ def reproduce_crash(binary_path, symbolizer_path, current_testcase):
   """Reproduces a crash by running the downloaded testcase against a binary."""
 
   env = current_testcase.environment
+  env.update(os.environ)
   env['ASAN_SYMBOLIZER_PATH'] = symbolizer_path
-  env['ASAN_OPTIONS'] = env['ASAN_OPTIONS'].replace(
+  env['ASAN_OPTIONS'] = env.get('ASAN_OPTIONS', '').replace(
       'symbolize=0', 'symbolize=1')
   if 'symbolize=1' not in env['ASAN_OPTIONS']:
     env['ASAN_OPTIONS'] += ':symbolize=1'
   env['LSAN_OPTIONS'] = ''
+  print env
 
-  command = '%s %s %s' % (binary_path, current_testcase.reproduction_args,
+  current_testcase.reproduction_args += '--user-data-dir=/tmp/test-user-again-2 --js-flags="--expose-gc --verify-heap" --no-first-run --use-gl=osmesa'
+
+  command = '%s %s --disable-setuid-sandbox %s' % (binary_path, current_testcase.reproduction_args,
                           current_testcase.get_testcase_path())
   common.execute(command, os.path.dirname(binary_path),
                  environment=env)
@@ -177,8 +184,10 @@ def execute(testcase_id, current, build):
   current_testcase = testcase.Testcase(response)
 
   if build == 'download':
-    definition = get_binary_definition(current_testcase.job_type,
-                                       STANDALONE_SUPPORTED_JOBS)
+    definition = get_binary_definition(
+        current_testcase.job_type,
+        dict(STANDALONE_SUPPORTED_JOBS.items() +
+             CHROMIUM_SUPPORTED_JOBS.items()))
     binary_provider = binary_providers.DownloadedBinary(
         current_testcase.id, current_testcase.build_url, definition.binary_name)
   elif build == 'standalone':
